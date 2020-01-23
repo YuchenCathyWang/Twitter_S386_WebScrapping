@@ -1,0 +1,260 @@
+---
+title: "A2"
+author: "Yuchen Wang"
+date: "9/23/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Abstract & background information
+Lots of people around me are talking about a recent immigration bill S396 so I would like to see how people on twitter react to this recent bill and recent actions. The bill would increase the annual per-country limits for employment-based green cards from 7% to 15%. Some politicians tried to sneak it through using Unanimous Consent (UC) last Thursday (9/18), but the UC was blocked by Senator Rand Paul and people started to raise attention on the content of the bill.
+
+I used rtweet for scrapping the data, tidyverse, stringr, dplyr and plyr to clean the data, tidytext janeaustenr, ggplot2, reshape2 and wordcloud packages to visualize the results. I used both dplyr and plyr because their count functions work differently and I need both counts during my sentiment analysis.
+
+The scrapped dataset is a little bit different with regular dataset because it contains symbols like emojis, and lots of random missing information such as location, lattitude. I did not include emojis in my analysis because I think there might be biased information contains in the emojis as different people might use the same emoji to express completely different attitude, but I can see how it might be useful as well for sentiment analysis. The data cleaning process is somewhat similar with the Amazon case. I tried to identify the origins of these tweets, and needed to clean the location information. The separate and unify process is very similar with the amazon case and much messier than lots of regular dataset.
+
+I created two major metadata tables with variables I used in the analysis and might use if I continue to explore this dataset. More metadata will be available upon request.
+
+Web Scrapping
+I used rtweet to stream and searched tweet contained keyword "S396". After streaming for 10 minutes, there were only 134 observations, so I used search tweet instead, and it returned 7497 observations, which are sufficiently enough for text analysis.
+
+
+Analysis and Result
+In this analysis, I looked at two aspect: people's attitude and geographic locations where people sent out their tweets. 
+People generally have negative attitude toward the bill and in the word cloud, most commonly word shown in positive are support, skilled, fairness, merit and most commonly word shown in negative are abuse, fraud, cheap, oppose, discrimination.
+Most tweets were sent out from economic developed regions with large tech companys reside, the leading states are CA, WA, TX, NC, and DC. It may be because they would be heavily influenced by the bill once the bill got passed. More detailed visualization is shown below.
+
+```{r, eval = FALSE}
+# Install rtweet
+install.packages("rtweet")
+# Load rtweet
+library(rtweet)
+library(dplyr)
+library(tidyverse)
+
+#stream tweets relate to S386 in 10 minutes
+S386 <- stream_tweets(
+  q = "S386",
+  timeout = 600
+)
+#see variable types
+glimpse(S386)
+
+#delete unrelated list variables and convert hashtag into multiple variables
+S386 <- S386[, -c(19:29)]
+View(colnames(S386))
+S386 <- S386[, -c(58:60)]
+
+length(S386$hashtags)
+
+S386$hashtags <- as.character(S386$hashtags)
+
+View(colnames(S386))
+S386 <- S386[, -c(18:20)]
+
+
+#write data into csv file to store data
+write.csv(S386,"C:\\Users\\wangy\\Desktop\\MSBAMini1\\BAN6020Data Management\\A2\\386.csv")
+
+HR1044 <- stream_tweets(
+  q = "HR1044",
+  timeout = 600
+)
+
+```
+
+```{r search tweets, eval = FALSE}
+
+S386_v2 <- search_tweets("s386", lang = "en", n=3000, include_rts = FALSE, retryonratelimit = TRUE)
+
+glimpse(S386_v2)
+
+View(colnames(S386_v2))
+S386_v2 <- S386_v2[, -c(7:9)]
+S386_v2 <- S386_v2[, -c(12:13)]
+S386_v2 <- S386_v2[, -c(18:20)]
+S386_v2 <- S386_v2[, -c(13:25)]
+
+#selected quoted information for later analysis
+quoted <- S386_v2[, c(15:29)]
+write.csv(quoted,"C:\\Users\\wangy\\Desktop\\MSBAMini1\\BAN6020Data Management\\A2\\quoted.csv")
+
+
+#select retweet information for later analysis, saved as csv file
+retweet <- S386_v2[, c(30:44)]
+write.csv(retweet,"C:\\Users\\wangy\\Desktop\\MSBAMini1\\BAN6020Data Management\\A2\\retweet.csv")
+
+S386_clean <- S386_v2[, c(1:13,55:57,60:61)]
+glimpse(S386_clean)
+
+S386_clean$hashtags <- as.character(as.vector(S386_clean$hashtags))
+S386_clean$mentions_screen_name <- as.character(as.vector(S386_clean$mentions_screen_name))
+  
+
+write.csv(S386_clean,"C:\\Users\\wangy\\Desktop\\MSBAMini1\\BAN6020Data Management\\A2\\S386_clean.csv")
+
+
+
+```
+
+```{r clean data, eval = FALSE}
+library(ggplot2)
+library(tidytext)
+library(stringr)
+library(knitr)
+
+S386_clean <- tidytext::unnest_tokens(read.csv("C:\\Users\\wangy\\Desktop\\MSBAMini1\\BAN6020Data Management\\A2\\S386_clean.csv", stringsAsFactors = FALSE), word, text)
+
+S386_clean <- read.csv("C:\\Users\\wangy\\Desktop\\MSBAMini1\\BAN6020Data Management\\A2\\S386_clean.csv")
+
+S386_clean$text<- str_remove_all(S386_clean$text,"@|'http://w{15}'|#|/|!")
+S386_clean$text<- str_remove_all(S386_clean$text,"\\?|\\.|\\:|\\,|'http'")
+
+write.csv(S386_clean,"C:\\Users\\wangy\\Desktop\\MSBAMini1\\BAN6020Data Management\\A2\\S386_text.csv")
+
+
+```
+
+```{r sentiment analysis for tweet contents}
+library(tidytext)
+library(janeaustenr)
+library(tidyverse)
+library(plyr)
+library(reshape2)
+library(wordcloud)
+
+#read from saved csv file, scrapped from twitter
+S386_clean <- read.csv("C:\\Users\\wangy\\Desktop\\MSBAMini1\\BAN6020Data Management\\A2\\S386_clean.csv")
+S386_clean_Meta <- data.frame(Variables=c("user_id", "status_id", "created_at", "screen_name", "text", "source", "reply_to_screen_name", "is_quote", "is_retweet", "favourite_count", "retweet_count", "hashtags", "mentions_screen_name", "name", "location", "description", "followers_count", "friends_count"),
+                           Description=c("[dbl] user id for every tweet, not unique", 
+                                         "[dbl] unique status id for every tweet",
+                                         "[fct/text] date and time the tweet was sent out", 
+                                         "[fct/text] nickname for user, not unique",
+                                         "[fct/text] tweet content", 
+                                         "[fct/text] Device type of where the tweet was sent",
+                                         "[fct/text] who the tweet was replied to, if any", 
+                                         "[lgl] whether the tweet contains quotes",
+                                         "[lgl] whether the tweet is retweet", 
+                                         "[int] count like numbers",
+                                         "[int] count retweet times", 
+                                         "[fct/text] hashtags included in the tweet",
+                                         "[fct/text] accounts that the tweet @ and refers to", 
+                                         "[fct/text] name of the tweet writer",
+                                         "[fct/text] location where the tweets were sent out", 
+                                         "[fct/text] personal description for the tweet writer",
+                                         "[Int] followers number for the twitter account", 
+                                         "[Int] friends number for the twitter account"
+                                         ))
+knitr::kable(S386_clean_Meta, format = "markdown")
+
+tweet_words_Meta <- data.frame(Variables=c("status_id", "text"),
+                           Description=c("[Char] unique status id for every tweet", 
+                                         "[Char] tweet content"
+                                         ))
+knitr::kable(tweet_words_Meta, format = "markdown")
+
+
+#create new df tweet words with only id and text content, for later sentiment analysis
+tweet_words <- select(S386_clean, status_id, text)
+
+tweet_words$text <- as.character(tweet_words$text)
+tweet_words$status_id <- as.character(tweet_words$status_id)
+  
+tweet_words <- as.tibble(tweet_words)
+
+#tokenize text and eliminate stop words
+tidy_words<- tweet_words %>%
+  unnest_tokens(word, text)
+tidy_words <- tidy_words %>%
+  anti_join(stop_words)
+
+#graph to show most commonly appeared words
+f1 <- count(tidy_words,"word")
+f1 %>% 
+    arrange(desc(freq)) %>%
+    slice(1:20) %>%
+ggplot(aes(x=reorder(word,-freq), y=freq)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  theme(axis.text.x=element_text(angle=45,hjust=1))+
+  labs(x = "CommonWords", y = "Frequency")
+
+#compare tweets content with bing library, more negative words appeared toward bill S396 than positive
+bing_word_counts <- tidy_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  dplyr::count(word, sentiment, sort = TRUE) %>%
+  ungroup() 
+ggplot(bing_word_counts, aes(x=sentiment,fill=sentiment))+
+  geom_bar()
+
+#word cloud to show the comparison, most commonly word shown in positive: support, skilled, fairness, merit; most commonly word shown in negative: abuse, fraud, cheap, oppose, discrimination
+tidy_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  dplyr::count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("#F8766D", "#00BFC4"),
+                   max.words = 100,title.size = 4)
+
+
+```
+
+```{r origins, echo=FALSE, message = FALSE, error = FALSE, warning= FALSE}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+
+#read from saved csv file, scrapped from twitter
+S386_clean <- read.csv("C:\\Users\\wangy\\Desktop\\MSBAMini1\\BAN6020Data Management\\A2\\S386_clean.csv")
+
+location <- S386_clean$location
+location <- as.data.frame(location)
+
+freq <- count(location,"location")
+freq <- freq[-c(1:19),]
+names(freq)[1]<-"CityState"
+
+freq$CityState <- as.character(as.vector(freq$CityState))
+
+
+#top 12 cities sends most twitter about bill S396: most cities are from CA, TX, WA, where tech companies reside
+freq %>% 
+    arrange(desc(freq)) %>%
+    slice(1:12) %>%
+ ggplot(aes(x=reorder(CityState,-freq), y=freq)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  theme(axis.text.x=element_text(angle=45,hjust=1))+
+  geom_text(aes(label=freq),vjust = -0.5)+
+  labs(x = "CityState", y = "Frequency")
+```
+
+```{r state level}
+#take a larger picture to look at state level
+
+state <- select(freq,CityState,freq)
+
+state <- state %>%
+  separate(CityState, c("city","state"), sep = ",")
+
+state$state <- state$state %>%
+  str_replace_all("ca|California", "CA")%>%
+  str_replace_all("virginia USA|Virginia","VA")%>%
+  str_replace_all("Ohio","OH")%>%
+  str_replace_all("Texas|tx","TX")%>%
+  str_replace_all("Georgia","GA")%>%
+  str_replace_all("Florida|FL and Manchester","FL")
+
+state_order <- count(state,"state")
+state_order <- state_order[-c(1:3),]
+
+#as city information indicates, most twitters come from economically leading states with large tech companies locate, inlcuding West Coast(CA, WA), East (DC, MA), NC(triangle research area), IL(Chicago)
+state_order %>% 
+    arrange(desc(freq)) %>%
+    slice(1:12) %>%
+ggplot(aes(x=reorder(state,-freq), y=freq, na.rm = TRUE)) +
+  geom_bar(stat="identity", fill="steelblue")+
+  geom_text(aes(label=freq),vjust = -0.5)+
+  labs(x = "Origin", y = "Frequency")
+```
+
+
